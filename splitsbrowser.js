@@ -409,7 +409,7 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
     */
     SplitsBrowser.parseTime = function (time) {
         time = time.trim();
-        if (/^(\d+:)?\d+:\d\d([,.]\d+)?$/.test(time)) {
+        if (/^(-?\d+:)?-?\d+:-?\d\d([,.]\d+)?$/.test(time)) {
             var timeParts = time.replace(",", ".").split(":");
             var totalTime = 0;
             timeParts.forEach(function (timePart) {
@@ -700,7 +700,9 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
     *     or got disqualified.
     */
     Competitor.prototype.completed = function () {
-        return this.totalTime !== null && !this.isDisqualified && !this.isOverMaxTime;
+ //       return this.totalTime !== null && !this.isDisqualified && !this.isOverMaxTime;
+ // modified
+        return this.totalTime !== null  && !this.isDisqualified  && !this.isOverMaxTime && !this.isNonFinisher ;
     };
 
     /**
@@ -1146,7 +1148,9 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
         var fastestCompetitor = null;
         this.competitors.forEach(function (comp) {
             var compSplit = comp.getSplitTimeTo(controlIdx);
-            if (isNotNullNorNaN(compSplit)) {
+            // MODIFIED only completed
+//            if (isNotNullNorNaN(compSplit) ) {
+            if (comp.completed() && isNotNullNorNaN(compSplit)) {
                 if (fastestSplit === null || compSplit < fastestSplit) {
                     fastestSplit = compSplit;
                     fastestCompetitor = comp;
@@ -1430,8 +1434,10 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
             var fastestForThisControl = null;
             for (var competitorIdx = 0; competitorIdx < this.allCompetitors.length; competitorIdx += 1) {
                 var thisTime = this.allCompetitors[competitorIdx].getSplitTimeTo(controlIdx);
-                if (isNotNullNorNaN(thisTime) && (fastestForThisControl === null || thisTime < fastestForThisControl)) {
-                    fastestForThisControl = thisTime;
+                // modified
+                if (this.allCompetitors[competitorIdx].completed()  && isNotNullNorNaN(thisTime) && (fastestForThisControl === null || thisTime < fastestForThisControl)) {
+//                if ( thisTime >0 && isNotNullNorNaN(thisTime) && (fastestForThisControl === null || thisTime < fastestForThisControl)) {
+                        fastestForThisControl = thisTime;
                 }
             }
             
@@ -5723,35 +5729,166 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
             controls: controls
         };
     }
-    
     /**
-    * Parses data for a single class.
-    * @param {XMLElement} element - XML ClassResult element
-    * @param {Object} reader - XML reader used to assist with format-specific
-    *     XML reading.
+     * 
+     * @param {XMLElement} element 
+     * @param {*} index 
+     * @param {Object} reader - XML reader used to assist with format-specific XML reading.
     * @param {Array} warnings - Array to accumulate any warning messages within.
-    * @return {Object} Object containing parsed data.
     */
-    function parseClassData(element, reader, warnings) {
+    function parseTeamResults(element , cls , reader, warnings) {
         var jqElement = $(element);
-        var cls = {name: null, competitors: [], controls: [], course: null};
+        var teamResults = $("> TeamResult" , jqElement);
+        for (var index = 0; index < teamResults.length; index += 1) {
+            var team = {name : null , club: null , members: []   };
         
-        cls.course = reader.readCourseFromClass(jqElement, warnings);
+            var name = $("> Name" ,teamResults[index]).text();
+            team.name = name;
+            if (name === "") {
+                warnings.push("Could not find a name for a competitor");
+                return null;
+            }
         
-        var className = reader.readClassName(jqElement);
+            var club = $("> Organisation > Name" ,teamResults[index]).text();
+            team.club = club;
         
-        if (className === "") {
-            className = "<unnamed class>";
+            var virtualCompetitor ;
+            var teamMemberResults = $("> TeamMemberResult" , teamResults[index]);
+            var indexTeam;
+            for (indexTeam = 0; indexTeam < teamMemberResults.length; indexTeam += 1) {
+                var teamMembersAndControls = parseTeamMember(teamMemberResults[indexTeam] , club , index * teamMemberResults.length + indexTeam + 1, reader, warnings);
+                if (indexTeam === 0) {
+                    virtualCompetitor = teamMembersAndControls;
+                    virtualCompetitor.startTime = teamMembersAndControls.competitor.startTime;
+                }
+                else {
+                    if (indexTeam < teamMemberResults.length ) {
+                        virtualCompetitor.competitor.name = virtualCompetitor.competitor.name + "-";
+                    }
+                    virtualCompetitor.competitor.name = virtualCompetitor.competitor.name + teamMembersAndControls.competitor.name ;
+
+                    virtualCompetitor.controls.push("F");
+                    virtualCompetitor.controls = virtualCompetitor.controls.concat(teamMembersAndControls.controls);
+                    teamMembersAndControls.competitor.originalCumTimes.shift();
+                    virtualCompetitor.competitor.originalSplitTimes = virtualCompetitor.competitor.originalSplitTimes.concat(teamMembersAndControls.competitor.originalSplitTimes) ;
+
+                    var addedNewCumTimes = [];
+                    var j;
+                    for (j = 0 ; j < teamMembersAndControls.competitor.originalCumTimes.length ; j += 1) {
+                        addedNewCumTimes[j] = teamMembersAndControls.competitor.originalCumTimes[j] + virtualCompetitor.competitor.totalTime;
+                    }
+                    // var addedNewCumTimes = teamMembersAndControls.competitor.originalCumTimes.map( function(cum) {
+                    //     return cum + virtualCompetitor.competitor.totalTime;
+                    // }) ;
+                    virtualCompetitor.competitor.originalCumTimes = virtualCompetitor.competitor.originalCumTimes.concat(addedNewCumTimes) ;
+
+                    virtualCompetitor.competitor.totalTime = virtualCompetitor.competitor.totalTime + teamMembersAndControls.competitor.totalTime ;
+                    virtualCompetitor.competitor.isNonCompetitive = teamMembersAndControls.competitor.isNonCompetitive || virtualCompetitor.competitor.isNonCompetitive;
+                    virtualCompetitor.competitor.isNonStarter = teamMembersAndControls.competitor.isNonStarter || virtualCompetitor.competitor.isNonStarter;
+                    virtualCompetitor.competitor.isNonFinisher = teamMembersAndControls.competitor.isNonFinisher ||  virtualCompetitor.competitor.isNonFinisher;
+                    virtualCompetitor.competitor.isDisqualified = teamMembersAndControls.competitor.isDisqualified || virtualCompetitor.competitor.isDisqualified;
+                    virtualCompetitor.competitor.isOverMaxTime = teamMembersAndControls.competitor.isOverMaxTime ||  virtualCompetitor.competitor.isOverMaxTime;
+                  }               
+            }
+
+            var finalCompetitor = fromOriginalCumTimes(index+1, virtualCompetitor.competitor.name, club, virtualCompetitor.startTime, virtualCompetitor.competitor.originalCumTimes);
+            finalCompetitor.isNonCompetitive = virtualCompetitor.competitor.isNonCompetitive;
+            finalCompetitor.isNonStarter = virtualCompetitor.competitor.isNonStarter;
+            finalCompetitor.isNonFinisher = virtualCompetitor.competitor.isNonFinisher;
+            finalCompetitor.isDisqualified = virtualCompetitor.competitor.isDisqualified;
+            finalCompetitor.isOverMaxTime = virtualCompetitor.competitor.isOverMaxTime;
+
+            finalCompetitor.startTime = virtualCompetitor.competitor.startTime ;
+            if (index === 0) {
+                cls.controls = virtualCompetitor.controls;
+                cls.course.numberOfControls = cls.controls.length;
+                cls.course.id = cls.controls.join(",");
+                cls.teamMembers = teamMemberResults.length;
+            }
+            if (indexTeam !== cls.teamMembers) {
+                finalCompetitor.setNonFinisher();
+            }
+
+            if (cls.controls.length !== finalCompetitor.originalCumTimes.length - 2) {
+                finalCompetitor.setNonFinisher();
+                var i;
+                for ( i = finalCompetitor.originalCumTimes.length ; i < cls.controls.length + 2 ; i += 1) {
+                    finalCompetitor.originalCumTimes[i] = null;
+                }
+            }
+            cls.competitors.push(finalCompetitor);
+            cls.teams.push(team);
         }
+        return null;
+    }
+    /**
+     * 
+     * @param {*} element 
+     * @param {*} index 
+     * @param {*} reader 
+     * @param {*} warnings 
+     */
+    function parseTeamMember(element , club , number , reader, warnings) {
+        var jqElement = $(element);
+        var nameElement = reader.getCompetitorNameElement(jqElement);
+        var name = readCompetitorName(nameElement);
+        //var dateOfBirth =  reader.readDateOfBirth(jqElement);
+        //var regexResult = yearRegexp.exec(dateOfBirth);
+        //var yearOfBirth = (regexResult === null) ? null : parseInt(regexResult[0], 10);
         
-        cls.name = className;
+        //var gender = $("> Person", jqElement).attr("sex");
         
-        var personResults = $("> PersonResult", jqElement);
-        if (personResults.length === 0) {
-            warnings.push("Class '" + className + "' has no competitors");
+        var resultElement = $("Result", jqElement);
+        if (resultElement.length === 0) {
+            warnings.push("Could not find any result information for competitor '" + name + "'");
             return null;
         }
         
+        var startTime = reader.readStartTime(resultElement);
+        
+        var totalTime = reader.readTotalTime(resultElement);
+        
+        var splitTimes = $("> SplitTime", resultElement).toArray();
+        var splitData = splitTimes.filter(function (splitTime) { return !reader.isAdditional($(splitTime)); })
+                                  .map(function (splitTime) { return reader.readSplitTime($(splitTime)); });
+        
+        var controls = splitData.map(function (datum) { return datum.code; });
+        var cumTimes = splitData.map(function (datum) { return datum.time; });
+        
+        cumTimes.unshift(0); // Prepend a zero time for the start.
+        cumTimes.push(totalTime);
+        
+        var competitor = fromOriginalCumTimes(number, name, club, startTime, cumTimes);
+               
+        var status = reader.getStatus(resultElement);
+        if (status === reader.StatusNonCompetitive) {
+            competitor.setNonCompetitive();
+        } else if (status === reader.StatusNonStarter) {
+            competitor.setNonStarter();
+        } else if (status === reader.StatusNonFinisher) {
+            competitor.setNonFinisher();
+        } else if (status === reader.StatusDisqualified) {
+            competitor.disqualify();
+        } else if (status === reader.StatusOverMaxTime) {
+            competitor.setOverMaxTime();
+        }
+        
+        return {
+            competitor: competitor,
+            controls: controls
+        };       
+    }
+    /**
+    * Parses data for a single class when the race is single competitor. 
+    * @param {XMLElement} element - XML ClassResult element
+    * @param {Object} cls - the class object
+    * @param {Object} reader - XML reader used to assist with format-specific XML reading.
+    * @param {Array} warnings - Array to accumulate any warning messages within.
+    * @return {Object} Object containing parsed data.
+    */
+    function parseCompetitorResults(element , cls , reader , warnings) {
+        var jqElement = $(element);
+        var personResults = $("> PersonResult", jqElement);
         for (var index = 0; index < personResults.length; index += 1) {
             var competitorAndControls = parseCompetitor(personResults[index], index + 1, reader, warnings);
             if (competitorAndControls !== null) {
@@ -5776,7 +5913,7 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
                 if (competitor.isNonStarter && actualControlCount === 0) {
                     // Don't generate warnings for non-starting competitors with no controls.
                 } else if (actualControlCount !== cls.course.numberOfControls) {
-                    warning = "Competitor '" + competitor.name + "' in class '" + className + "' has an unexpected number of controls: expected " + cls.course.numberOfControls + ", actual " + actualControlCount;
+                    warning = "Competitor '" + competitor.name + "' in class '" + cls.className + "' has an unexpected number of controls: expected " + cls.course.numberOfControls + ", actual " + actualControlCount;
                 } else {
                     for (var controlIndex = 0; controlIndex < actualControlCount; controlIndex += 1) {
                         if (cls.controls[controlIndex] !== controls[controlIndex]) {
@@ -5809,8 +5946,45 @@ var SplitsBrowser = { Version: "3.4.4", Model: {}, Input: {}, Controls: {}, Mess
             // Idea thanks to 'dfgeorge' (David George?)
             cls.course.id = cls.controls.join(",");
         }
+        return null;
+    }
+    /**
+    * Parses data for a single class. 
+    * @param {XMLElement} element - XML ClassResult element
+    * @param {Object} reader - XML reader used to assist with format-specific
+    *     XML reading.
+    * @param {Array} warnings - Array to accumulate any warning messages within.
+    * @return {Object} Object containing parsed data.
+    */
+    function parseClassData(element, reader, warnings) {
+        var jqElement = $(element);
+        var cls = {name: null, competitors: [], controls: [], course: null , typeRace: null, teams: [] ,teamMembers: null};
         
+        cls.course = reader.readCourseFromClass(jqElement, warnings);
+        
+        var className = reader.readClassName(jqElement);
+        
+        if (className === "") {
+            className = "<unnamed class>";
+        }
+        
+        cls.name = className;
+        
+        var teamResults = $("> TeamResult" , jqElement);
+        if (teamResults.length !== 0) {
+            cls.typeRace = "relay";
+            parseTeamResults(element , cls , reader , warnings);
         return cls;
+    }
+        var personResults = $("> PersonResult", jqElement);
+        if (personResults.length !== 0) {
+            cls.typeRace = "single";
+           parseCompetitorResults(element , cls , reader , warnings);
+           return cls;
+        } 
+
+        warnings.push("Class '" + className + "' has no competitors");
+        return null;
     }
    
     /**

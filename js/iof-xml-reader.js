@@ -693,24 +693,32 @@
                   }               
             }
 
-            var finalCOmpetitor = fromOriginalCumTimes(index+1, virtualCompetitor.competitor.name, club, virtualCompetitor.startTime, virtualCompetitor.competitor.originalCumTimes);
-            finalCOmpetitor.isNonCompetitive = virtualCompetitor.competitor.isNonCompetitive;
-            finalCOmpetitor.isNonStarter = virtualCompetitor.competitor.isNonStarter;
-            finalCOmpetitor.isNonFinisher = virtualCompetitor.competitor.isNonFinisher;
-            finalCOmpetitor.isDisqualified = virtualCompetitor.competitor.isDisqualified;
-            finalCOmpetitor.isOverMaxTime = virtualCompetitor.competitor.isOverMaxTime;
+            var finalCompetitor = fromOriginalCumTimes(index+1, virtualCompetitor.competitor.name, club, virtualCompetitor.startTime, virtualCompetitor.competitor.originalCumTimes);
+            finalCompetitor.isNonCompetitive = virtualCompetitor.competitor.isNonCompetitive;
+            finalCompetitor.isNonStarter = virtualCompetitor.competitor.isNonStarter;
+            finalCompetitor.isNonFinisher = virtualCompetitor.competitor.isNonFinisher;
+            finalCompetitor.isDisqualified = virtualCompetitor.competitor.isDisqualified;
+            finalCompetitor.isOverMaxTime = virtualCompetitor.competitor.isOverMaxTime;
 
-            finalCOmpetitor.startTime = virtualCompetitor.competitor.startTime ;
+            finalCompetitor.startTime = virtualCompetitor.competitor.startTime ;
             if (index === 0) {
                 cls.controls = virtualCompetitor.controls;
                 cls.course.numberOfControls = cls.controls.length;
                 cls.course.id = cls.controls.join(",");
                 cls.teamMembers = teamMemberResults.length;
             }
-            if (indexTeam !== cls.teamMembers ) {
-                finalCOmpetitor.setNonFinisher();
+            if (indexTeam !== cls.teamMembers) {
+                finalCompetitor.setNonFinisher();
             }
-            cls.competitors.push(finalCOmpetitor);
+
+            if (cls.controls.length !== finalCompetitor.originalCumTimes.length - 2) {
+                finalCompetitor.setNonFinisher();
+                var i;
+                for ( i = finalCompetitor.originalCumTimes.length ; i < cls.controls.length + 2 ; i += 1) {
+                    finalCompetitor.originalCumTimes[i] = null;
+                }
+            }
+            cls.competitors.push(finalCompetitor);
             cls.teams.push(team);
         }
         return null;
