@@ -600,6 +600,11 @@
         var controls = splitData.map(function (datum) { return datum.code; });
         var cumTimes = splitData.map(function (datum) { return datum.time; });
         
+        if (totalTime > 0 && totalTime < cumTimes[cumTimes.length - 1]) {
+            var deltaTime =  cumTimes[cumTimes.length - 1] - totalTime;
+            cumTimes = splitData.map(function (datum) { return datum.time - deltaTime ; });
+        } 
+        
         cumTimes.unshift(0); // Prepend a zero time for the start.
         cumTimes.push(totalTime);
         
@@ -756,7 +761,12 @@
         
         var controls = splitData.map(function (datum) { return datum.code; });
         var cumTimes = splitData.map(function (datum) { return datum.time; });
-        
+
+        if (totalTime > 0 && totalTime < cumTimes[cumTimes.length - 1]) {
+            var deltaTime =  cumTimes[cumTimes.length - 1] - totalTime;
+            cumTimes = splitData.map(function (datum) { return datum.time - deltaTime ; });
+        }        
+
         cumTimes.unshift(0); // Prepend a zero time for the start.
         cumTimes.push(totalTime);
         
@@ -774,7 +784,7 @@
         } else if (status === reader.StatusOverMaxTime) {
             competitor.setOverMaxTime();
         }
-        
+
         return {
             competitor: competitor,
             controls: controls
